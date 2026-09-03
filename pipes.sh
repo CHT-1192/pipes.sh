@@ -223,8 +223,13 @@ parse() {
 
 
 cleanup() {
-    # clear out standard input
-    read -t 0.001 && cat </dev/stdin>/dev/null
+    # clear out standard input (fractional `read -t` needs bash >= 4; on
+    # macOS system bash 3.2, poll and drain what is already buffered)
+    if ((BASH_VERSINFO[0] >= 4)); then
+        read -t 0.001 && cat </dev/stdin>/dev/null
+    else
+        while read -t 0 -n 1 2>/dev/null; do :; done
+    fi
 
     tput reset  # fix for konsole, see pipeseroni/pipes.sh#43
     tput rmcup
@@ -325,7 +330,15 @@ main() {
 
     local i
     while REPLY=; do
-        read -t 0.0$((1000 / f)) -n 1 2>/dev/null
+        # Wait up to 1/f s for a keypress. Fractional `read -t` needs
+        # bash >= 4; on bash 3.2 pace with a fractional sleep and poll
+        # keys non-blockingly instead (read -t 0).
+        if ((BASH_VERSINFO[0] >= 4)); then
+            read -t 0.0$((1000 / f)) -n 1 2>/dev/null
+        else
+            sleep 0.0$((1000 / f))
+            read -t 0 -n 1 2>/dev/null
+        fi
         case "$REPLY" in
             P) ((s = s <  15 ? s + 1 : s));;
             O) ((s = s >   3 ? s - 1 : s));;
